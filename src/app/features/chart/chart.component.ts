@@ -10,15 +10,6 @@ import {
 } from '@angular/core';
 import { OHLC } from '../../core/interfaces/market-data.interface';
 
-/**
- * ChartComponent — renders candlestick price charts.
- *
- * Uses the `lightweight-charts` library from TradingView.
- * This is the same charting library used by many trading platforms.
- *
- * Usage:
- *   <app-chart [priceHistory]="data.priceHistory" />
- */
 @Component({
   selector: 'app-chart',
   standalone: true,
@@ -93,15 +84,14 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   }
 
   private async initChart(): Promise<void> {
-    // Dynamic import — lightweight-charts is loaded only when needed
     try {
-      const { createChart, ColorType } = await import('lightweight-charts');
+      const lc = await import('lightweight-charts');
 
-      this.chart = createChart(this.chartContainer.nativeElement, {
+      this.chart = lc.createChart(this.chartContainer.nativeElement, {
         width: this.chartContainer.nativeElement.clientWidth,
         height: 400,
         layout: {
-          background: { type: ColorType.Solid, color: '#131820' },
+          background: { type: lc.ColorType.Solid, color: '#131820' },
           textColor: '#8494a7',
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: 11,
@@ -111,7 +101,7 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
           horzLines: { color: '#1e273622' },
         },
         crosshair: {
-          mode: 0, // Normal crosshair
+          mode: 0,
           vertLine: {
             color: '#00d4ff33',
             labelBackgroundColor: '#00d4ff',
@@ -131,9 +121,8 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         },
       });
 
-      // Candlestick series
-      this.candleSeries = this.chart.addSeries({
-        type: 'Candlestick',
+      // v5 syntax: pass the series constructor as first argument
+      this.candleSeries = this.chart.addSeries(lc.CandlestickSeries, {
         upColor: '#00e68a',
         downColor: '#ff4466',
         borderUpColor: '#00e68a',
@@ -142,9 +131,7 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         wickDownColor: '#ff446688',
       });
 
-      // Volume series (overlay at bottom)
-      this.volumeSeries = this.chart.addSeries({
-        type: 'Histogram',
+      this.volumeSeries = this.chart.addSeries(lc.HistogramSeries, {
         color: '#00d4ff22',
         priceFormat: { type: 'volume' },
         priceScaleId: 'volume',
@@ -172,10 +159,20 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   private updateChartData(): void {
     if (!this.candleSeries || this.priceHistory.length === 0) return;
 
-    this.candleSeries.setData(this.priceHistory);
+    // Deduplicate and ensure ascending order by time
+    const seen = new Set<string>();
+    const cleanData = this.priceHistory
+      .filter((d) => {
+        if (seen.has(d.time)) return false;
+        seen.add(d.time);
+        return true;
+      })
+      .sort((a, b) => a.time.localeCompare(b.time));
+
+    this.candleSeries.setData(cleanData);
 
     this.volumeSeries.setData(
-      this.priceHistory.map((d) => ({
+      cleanData.map((d) => ({
         time: d.time,
         value: d.volume,
         color: d.close >= d.open ? '#00e68a22' : '#ff446622',

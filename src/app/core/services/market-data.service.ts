@@ -1,6 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { environment } from '../../../environments/environment';
 import {
   Quote,
   OHLC,
@@ -12,11 +11,10 @@ import {
 /**
  * MarketDataService — the central data engine for AstralTrader.
  *
- * Responsibilities:
- * - Fetches quotes and price history from Alpha Vantage
- * - Computes technical indicators from raw OHLC data
- * - Manages the watchlist (add/remove/persist)
- * - Exposes reactive signals that components subscribe to
+ * NOW USING: Yahoo Finance (via public chart/quote endpoints)
+ * - No daily call limits
+ * - Real price data with full history
+ * - Quotes + OHLC candles in a single request
  *
  * Phase 2 will add: UnusualWhalesService (separate service, data merges here)
  * Phase 3 will add: Claude API calls triggered from here
@@ -44,15 +42,12 @@ export class MarketDataService {
 
   // ─── Public Computed Signals ───────────────────────────────
 
-  /** Watchlist as a read-only signal */
   readonly watchlist = computed(() => this._watchlist());
 
-  /** All market data as an array (for dashboard grid) */
   readonly allMarketData = computed(() =>
     Array.from(this.marketDataMap().values())
   );
 
-  /** Market data for the selected ticker */
   readonly selectedData = computed(() => {
     const ticker = this._selectedTicker();
     if (!ticker) return null;
@@ -63,13 +58,15 @@ export class MarketDataService {
   readonly loading = computed(() => this._loading());
   readonly error = computed(() => this._error());
 
-  // ─── API Config ────────────────────────────────────────────
+  // ─── Yahoo Finance Config ──────────────────────────────────
 
-  private readonly apiKey = environment.alphaVantageApiKey;
-  private readonly baseUrl = environment.api.alphaVantage;
+  // Public Yahoo Finance endpoints that work from the browser
+  // Using a CORS proxy to handle cross-origin requests
+  private readonly corsProxy = 'https://corsproxy.io/?';
+  private readonly yahooChartBase = 'https://query1.finance.yahoo.com/v8/finance/chart/';
+  private readonly yahooQuoteBase = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=';
 
   constructor(private http: HttpClient) {
-    // Load data for existing watchlist items on startup
     this.initializeData();
   }
 
@@ -77,18 +74,18 @@ export class MarketDataService {
 
   addToWatchlist(ticker: string, name: string): void {
     const current = this._watchlist();
-    if (current.some((item) => item.ticker === ticker)) return;
+    const upperTicker = ticker.toUpperCase();
+    if (current.some((item) => item.ticker === upperTicker)) return;
 
     const newItem: WatchlistItem = {
-      ticker: ticker.toUpperCase(),
+      ticker: upperTicker,
       name,
       addedAt: new Date(),
     };
 
     this._watchlist.set([...current, newItem]);
     this.saveWatchlist();
-    this.fetchQuote(ticker.toUpperCase());
-    this.fetchDailyHistory(ticker.toUpperCase());
+    this.fetchTickerData(upperTicker);
   }
 
   removeFromWatchlist(ticker: string): void {
@@ -97,7 +94,6 @@ export class MarketDataService {
     );
     this.saveWatchlist();
 
-    // Remove from market data map
     const map = new Map(this.marketDataMap());
     map.delete(ticker);
     this.marketDataMap.set(map);
@@ -105,96 +101,123 @@ export class MarketDataService {
 
   selectTicker(ticker: string | null): void {
     this._selectedTicker.set(ticker);
+    // Fetch full history if we only have a quote
+    if (ticker) {
+      const data = this.marketDataMap().get(ticker);
+      if (!data || data.priceHistory.length === 0) {
+        this.fetchTickerData(ticker);
+      }
+    }
   }
 
   // ─── Data Fetching ─────────────────────────────────────────
 
   /**
-   * Fetch a real-time quote for a ticker.
-   * Uses Alpha Vantage GLOBAL_QUOTE endpoint.
+   * Fetch quote + history for a ticker in ONE request.
+   * Yahoo's chart endpoint returns both current price and OHLC history.
+   * This is much more efficient than Alpha Vantage's separate endpoints.
    */
-  async fetchQuote(ticker: string): Promise<void> {
+  async fetchTickerData(ticker: string): Promise<void> {
     this._loading.set(true);
     this._error.set(null);
 
     try {
-      const url = `${this.baseUrl}?function=GLOBAL_QUOTE&symbol=${ticker}&apikey=${this.apiKey}`;
+      // Yahoo chart API: returns OHLC + current quote in one call
+      // range=6mo gives ~130 trading days of daily candles
+      const url = `${this.corsProxy}${encodeURIComponent(
+        `${this.yahooChartBase}${ticker}?range=6mo&interval=1d&includePrePost=false`
+      )}`;
+
       const response: any = await this.http.get(url).toPromise();
 
-      const raw = response['Global Quote'];
-      if (!raw || !raw['05. price']) {
+      const result = response?.chart?.result?.[0];
+      if (!result) {
         throw new Error(`No data returned for ${ticker}`);
       }
 
+      // Extract quote data from the meta field
+      const meta = result.meta;
       const quote: Quote = {
         ticker,
-        price: parseFloat(raw['05. price']),
-        open: parseFloat(raw['02. open']),
-        high: parseFloat(raw['03. high']),
-        low: parseFloat(raw['04. low']),
-        previousClose: parseFloat(raw['08. previous close']),
-        volume: parseInt(raw['06. volume'], 10),
-        changeDollar: parseFloat(raw['09. change']),
-        changePercent: parseFloat(raw['10. change percent']?.replace('%', '')),
+        price: meta.regularMarketPrice ?? 0,
+        open: meta.regularMarketOpen ?? 0,
+        high: meta.regularMarketDayHigh ?? 0,
+        low: meta.regularMarketDayLow ?? 0,
+        previousClose: meta.chartPreviousClose ?? meta.previousClose ?? 0,
+        volume: meta.regularMarketVolume ?? 0,
+        changeDollar: (meta.regularMarketPrice ?? 0) - (meta.chartPreviousClose ?? meta.previousClose ?? 0),
+        changePercent:
+          meta.chartPreviousClose || meta.previousClose
+            ? (((meta.regularMarketPrice ?? 0) - (meta.chartPreviousClose ?? meta.previousClose ?? 0)) /
+                (meta.chartPreviousClose ?? meta.previousClose ?? 1)) *
+              100
+            : 0,
         timestamp: new Date(),
       };
 
-      this.updateMarketData(ticker, { quote });
+      // Extract OHLC candles
+      const timestamps = result.timestamp ?? [];
+      const ohlc = result.indicators?.quote?.[0] ?? {};
+      const priceHistory: OHLC[] = [];
+
+      for (let i = 0; i < timestamps.length; i++) {
+        const open = ohlc.open?.[i];
+        const high = ohlc.high?.[i];
+        const low = ohlc.low?.[i];
+        const close = ohlc.close?.[i];
+        const volume = ohlc.volume?.[i];
+
+        // Skip null candles (holidays, missing data)
+        if (open == null || high == null || low == null || close == null) continue;
+
+        const date = new Date(timestamps[i] * 1000);
+        const dateStr = date.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
+        priceHistory.push({
+          time: dateStr,
+          open,
+          high,
+          low,
+          close,
+          volume: volume ?? 0,
+        });
+      }
+
+      // Sort chronologically
+      priceHistory.sort((a, b) => a.time.localeCompare(b.time));
+
+      // Compute technicals from the history
+      const technicals = this.computeTechnicals(priceHistory);
+
+      // Update the market data map
+      this.updateMarketData(ticker, {
+        quote,
+        priceHistory,
+        technicals,
+        name: meta.longName ?? meta.shortName ?? this.getTickerName(ticker),
+      });
     } catch (err: any) {
-      this._error.set(`Failed to fetch quote for ${ticker}: ${err.message}`);
-      console.error(err);
+      const msg = `Failed to fetch data for ${ticker}: ${err.message}`;
+      this._error.set(msg);
+      console.error(msg, err);
     } finally {
       this._loading.set(false);
     }
   }
 
   /**
-   * Fetch daily OHLC history for charts.
-   * Uses Alpha Vantage TIME_SERIES_DAILY endpoint.
-   */
-  async fetchDailyHistory(ticker: string): Promise<void> {
-    try {
-      const url = `${this.baseUrl}?function=TIME_SERIES_DAILY&symbol=${ticker}&outputsize=compact&apikey=${this.apiKey}`;
-      const response: any = await this.http.get(url).toPromise();
-
-      const timeSeries = response['Time Series (Daily)'];
-      if (!timeSeries) {
-        throw new Error(`No history data for ${ticker}`);
-      }
-
-      const priceHistory: OHLC[] = Object.entries(timeSeries)
-        .map(([date, values]: [string, any]) => ({
-          time: date,
-          open: parseFloat(values['1. open']),
-          high: parseFloat(values['2. high']),
-          low: parseFloat(values['3. low']),
-          close: parseFloat(values['4. close']),
-          volume: parseInt(values['5. volume'], 10),
-        }))
-        .sort((a, b) => a.time.localeCompare(b.time));
-
-      const technicals = this.computeTechnicals(priceHistory);
-
-      this.updateMarketData(ticker, { priceHistory, technicals });
-    } catch (err: any) {
-      console.error(`Failed to fetch history for ${ticker}:`, err.message);
-    }
-  }
-
-  /**
    * Refresh all watchlist data.
-   * Called on init and can be triggered manually.
+   * With Yahoo Finance, we can fetch much faster than Alpha Vantage.
    */
   async refreshAll(): Promise<void> {
+    this._loading.set(true);
     const tickers = this._watchlist().map((item) => item.ticker);
     for (const ticker of tickers) {
-      await this.fetchQuote(ticker);
-      // Alpha Vantage free tier: 25 req/day, 5 req/min
-      // Add delay between requests to avoid rate limiting
-      await this.delay(12000);
-      await this.fetchDailyHistory(ticker);
-      await this.delay(12000);
+      await this.fetchTickerData(ticker);
+      // Small delay to be polite to Yahoo's servers
+      await this.delay(500);
     }
+    this._loading.set(false);
   }
 
   // ─── Technical Indicator Computation ───────────────────────
@@ -202,23 +225,25 @@ export class MarketDataService {
   /**
    * Compute technical indicators from OHLC data.
    * This runs client-side — no API call needed.
-   *
-   * Phase 2 will use these values in scanner rule evaluation.
    */
   private computeTechnicals(data: OHLC[]): TechnicalIndicators {
     const closes = data.map((d) => d.close);
     const volumes = data.map((d) => d.volume);
+
+    const ema12 = this.computeEMA(closes, 12);
+    const ema26 = this.computeEMA(closes, 26);
+    const macd = this.computeMACD(closes);
 
     return {
       rsi14: this.computeRSI(closes, 14),
       sma20: this.computeSMA(closes, 20),
       sma50: this.computeSMA(closes, 50),
       sma200: this.computeSMA(closes, 200),
-      ema12: this.computeEMA(closes, 12),
-      ema26: this.computeEMA(closes, 26),
-      macdLine: this.computeMACD(closes).line,
-      macdSignal: this.computeMACD(closes).signal,
-      macdHistogram: this.computeMACD(closes).histogram,
+      ema12,
+      ema26,
+      macdLine: macd.line,
+      macdSignal: macd.signal,
+      macdHistogram: macd.histogram,
       bollingerUpper: this.computeBollinger(closes, 20).upper,
       bollingerLower: this.computeBollinger(closes, 20).lower,
       avgVolume30d: this.computeSMA(volumes, 30),
@@ -236,7 +261,6 @@ export class MarketDataService {
     let gains = 0;
     let losses = 0;
 
-    // Initial average gain/loss
     for (let i = closes.length - period; i < closes.length; i++) {
       const change = closes[i] - closes[i - 1];
       if (change > 0) gains += change;
@@ -270,23 +294,43 @@ export class MarketDataService {
     return ema;
   }
 
-  /** MACD (12, 26, 9) */
+  /** MACD (12, 26, 9) — full proper computation */
   private computeMACD(closes: number[]): {
     line: number | null;
     signal: number | null;
     histogram: number | null;
   } {
-    const ema12 = this.computeEMA(closes, 12);
-    const ema26 = this.computeEMA(closes, 26);
-
-    if (ema12 === null || ema26 === null) {
+    if (closes.length < 26) {
       return { line: null, signal: null, histogram: null };
     }
 
-    const line = ema12 - ema26;
-    // Simplified: for a proper signal line, you'd compute EMA of the MACD line
-    // over the full series. This is an approximation for Phase 1.
-    const signal = line * 0.8; // placeholder
+    // Compute EMA12 and EMA26 series
+    const multiplier12 = 2 / 13;
+    const multiplier26 = 2 / 27;
+    const multiplier9 = 2 / 10;
+
+    let ema12 = closes.slice(0, 12).reduce((s, v) => s + v, 0) / 12;
+    let ema26 = closes.slice(0, 26).reduce((s, v) => s + v, 0) / 26;
+
+    const macdLine: number[] = [];
+
+    for (let i = 26; i < closes.length; i++) {
+      ema12 = (closes[i] - ema12) * multiplier12 + ema12;
+      ema26 = (closes[i] - ema26) * multiplier26 + ema26;
+      macdLine.push(ema12 - ema26);
+    }
+
+    if (macdLine.length < 9) {
+      return { line: macdLine[macdLine.length - 1] ?? null, signal: null, histogram: null };
+    }
+
+    // Signal line = 9-period EMA of MACD line
+    let signal = macdLine.slice(0, 9).reduce((s, v) => s + v, 0) / 9;
+    for (let i = 9; i < macdLine.length; i++) {
+      signal = (macdLine[i] - signal) * multiplier9 + signal;
+    }
+
+    const line = macdLine[macdLine.length - 1];
     const histogram = line - signal;
 
     return { line, signal, histogram };
@@ -315,20 +359,16 @@ export class MarketDataService {
 
   // ─── State Helpers ─────────────────────────────────────────
 
-  /**
-   * Update or create a MarketData entry.
-   * Merges partial data so quote and history can arrive separately.
-   */
   private updateMarketData(
     ticker: string,
-    partial: Partial<MarketData>
+    partial: Partial<MarketData> & { name?: string }
   ): void {
     const map = new Map(this.marketDataMap());
     const existing = map.get(ticker);
 
     const updated: MarketData = {
       ticker,
-      name: existing?.name ?? this.getTickerName(ticker),
+      name: partial.name ?? existing?.name ?? this.getTickerName(ticker),
       sector: existing?.sector ?? '',
       quote: partial.quote ?? existing?.quote ?? this.emptyQuote(ticker),
       technicals:
@@ -386,7 +426,6 @@ export class MarketDataService {
   private loadWatchlist(): WatchlistItem[] {
     const stored = localStorage.getItem('astraltrader_watchlist');
     if (!stored) {
-      // Default watchlist for first-time users
       return [
         { ticker: 'AAPL', name: 'Apple Inc.', addedAt: new Date() },
         { ticker: 'MSFT', name: 'Microsoft Corp.', addedAt: new Date() },
@@ -398,7 +437,6 @@ export class MarketDataService {
   }
 
   private getTickerName(ticker: string): string {
-    // Simple lookup — Phase 2 will use a proper search API
     const names: Record<string, string> = {
       AAPL: 'Apple Inc.',
       MSFT: 'Microsoft Corp.',
@@ -418,16 +456,16 @@ export class MarketDataService {
 
   private async initializeData(): Promise<void> {
     const tickers = this._watchlist().map((item) => item.ticker);
-    for (const ticker of tickers) {
-      // Stagger requests to respect rate limits
-      this.fetchQuote(ticker);
-      await this.delay(12000);
-    }
-    // Then fetch history for the first ticker
+
+    // Select the first ticker by default
     if (tickers.length > 0) {
       this._selectedTicker.set(tickers[0]);
-      await this.delay(12000);
-      this.fetchDailyHistory(tickers[0]);
+    }
+
+    // Fetch all tickers — Yahoo Finance can handle rapid requests
+    for (const ticker of tickers) {
+      await this.fetchTickerData(ticker);
+      await this.delay(300); // small courtesy delay
     }
   }
 

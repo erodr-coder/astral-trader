@@ -188,7 +188,7 @@ export class WatchlistComponent {
     // Fetch history if we don't have it yet
     const data = this.marketData.allMarketData().find(d => d.ticker === ticker);
     if (data && data.priceHistory.length === 0) {
-      this.marketData.fetchDailyHistory(ticker);
+      this.marketData.fetchTickerData(ticker);
     }
   }
 
