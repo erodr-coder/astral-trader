@@ -1,0 +1,267 @@
+// ─── Dashboard Layout ────────────────────────────────────────
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+// ─── Quick Stats Bar ─────────────────────────────────────────
+
+.quick-stats {
+  display: flex;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-family: var(--font-mono);
+}
+
+.stat-value {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.phase-badge {
+  color: var(--accent-cyan);
+}
+
+// ─── Main Grid ───────────────────────────────────────────────
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr 280px;
+  gap: var(--space-md);
+  min-height: 600px;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-grid {
+    grid-template-columns: 200px 1fr;
+  }
+  .cards-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+// ─── Panels ──────────────────────────────────────────────────
+
+.panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.ticker-name {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+// ─── Price Display ───────────────────────────────────────────
+
+.price-display {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.current-price {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.price-change {
+  font-size: 13px;
+  font-weight: 500;
+
+  &.positive {
+    color: var(--accent-green);
+  }
+  &.negative {
+    color: var(--accent-red);
+  }
+}
+
+// ─── Refresh Button ──────────────────────────────────────────
+
+.refresh-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+    background: var(--accent-cyan-dim);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    animation: spin 1s linear infinite;
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+// ─── Technical Indicators Grid ───────────────────────────────
+
+.technicals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  margin-top: 1px;
+}
+
+.tech-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px var(--space-md);
+  background: var(--bg-card);
+}
+
+.tech-label {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tech-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+// ─── Cards Panel ─────────────────────────────────────────────
+
+.cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border);
+}
+
+// ─── Empty State ─────────────────────────────────────────────
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2xl);
+  gap: var(--space-md);
+  min-height: 300px;
+}
+
+.empty-icon {
+  font-size: 32px;
+  color: var(--accent-cyan);
+  opacity: 0.3;
+}
+
+.empty-state p {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+// ─── Error Bar ───────────────────────────────────────────────
+
+.error-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--accent-red-dim);
+  border: 1px solid rgba(255, 68, 102, 0.2);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--accent-red);
+
+  button {
+    background: none;
+    border: none;
+    color: var(--accent-red);
+    cursor: pointer;
+    font-size: 14px;
+  }
+}
+
+// ─── Phase Hint Footer ───────────────────────────────────────
+
+.phase-hint {
+  padding: var(--space-lg) 0;
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-md);
+}
+
+.phase-items {
+  display: flex;
+  gap: var(--space-lg);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.phase-item {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+
+  &.active {
+    color: var(--accent-cyan);
+  }
+}

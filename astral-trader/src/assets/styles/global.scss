@@ -1,0 +1,133 @@
+// ─── AstralTrader Global Styles ──────────────────────────────
+// Design tokens, resets, and shared utilities.
+// This file is imported in angular.json as a global style.
+
+// ─── Design Tokens ───────────────────────────────────────────
+
+:root {
+  // Backgrounds
+  --bg-primary: #080b12;
+  --bg-secondary: #0d1117;
+  --bg-card: #131820;
+  --bg-card-hover: #1a2030;
+  --bg-input: #0f1319;
+
+  // Borders
+  --border: #1e2736;
+  --border-active: #2d3a4f;
+
+  // Text
+  --text-primary: #e2e8f0;
+  --text-secondary: #8494a7;
+  --text-muted: #4a5568;
+
+  // Accent — Cyan (primary actions, highlights)
+  --accent-cyan: #00d4ff;
+  --accent-cyan-dim: rgba(0, 212, 255, 0.08);
+  --accent-cyan-border: rgba(0, 212, 255, 0.2);
+
+  // Accent — Green (positive, gains)
+  --accent-green: #00e68a;
+  --accent-green-dim: rgba(0, 230, 138, 0.08);
+
+  // Accent — Red (negative, losses)
+  --accent-red: #ff4466;
+  --accent-red-dim: rgba(255, 68, 102, 0.08);
+
+  // Accent — Amber (warnings, neutral)
+  --accent-amber: #ffaa00;
+  --accent-amber-dim: rgba(255, 170, 0, 0.08);
+
+  // Accent — Purple (AI, intelligence)
+  --accent-purple: #aa66ff;
+  --accent-purple-dim: rgba(170, 102, 255, 0.08);
+
+  // Spacing
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  // Radius
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  // Typography
+  --font-body: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+// ─── Reset ───────────────────────────────────────────────────
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+// Subtle background texture
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(ellipse at 15% 15%, rgba(0, 212, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 85%, rgba(170, 102, 255, 0.02) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+// ─── Scrollbar ───────────────────────────────────────────────
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-active);
+}
+
+// ─── Utility Classes ─────────────────────────────────────────
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.text-green { color: var(--accent-green); }
+.text-red { color: var(--accent-red); }
+.text-cyan { color: var(--accent-cyan); }
+.text-amber { color: var(--accent-amber); }
+.text-muted { color: var(--text-muted); }
+.text-secondary { color: var(--text-secondary); }
